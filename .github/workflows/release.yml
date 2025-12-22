@@ -1,0 +1,36 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+      
+      - name: Build
+        run: cargo build --release
+      
+      - name: Download cygwin64 from original rsync-win
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/rn7s2/rsync-win/releases/download/v0.1.3/rsync-win.zip" -OutFile rsync-win-orig.zip
+          Expand-Archive -Path rsync-win-orig.zip -DestinationPath rsync-win-orig
+          New-Item -ItemType Directory -Path dist -Force
+          Copy-Item -Path rsync-win-orig/cygwin64 -Destination dist/cygwin64 -Recurse
+          Copy-Item -Path target/release/rsync-win.exe -Destination dist/rsync-win.exe
+      
+      - name: Create zip
+        run: Compress-Archive -Path dist/* -DestinationPath rsync-win.zip
+      
+      - name: Upload Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: rsync-win.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,0 +1,14 @@
+[package]
+name = "rsync-win"
+version = "0.2.0"
+edition = "2021"
+description = "Rsync for Windows (fork with additional flags)"
+license = "MIT"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+home = "0.5"
+
+[profile.release]
+lto = true
+strip = true
