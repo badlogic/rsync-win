@@ -82,13 +82,27 @@ struct Args {
 }
 
 fn main() {
-    let args = Args::parse();
+    // Collect all args
+    let raw_args: Vec<String> = env::args().collect();
+    
+    // Try to parse with clap, but allow unknown args
+    let args = Args::try_parse_from(&raw_args);
+    
+    // If parsing failed, try lenient parsing
+    let (args, passthrough) = match args {
+        Ok(args) => (args, Vec::new()),
+        Err(_) => parse_with_passthrough(&raw_args),
+    };
 
     let mut rsync_args = if is_ssh_path(&args.src) || is_ssh_path(&args.dest) {
         prepare_rsync_options_with_ssh(&args)
     } else {
         prepare_rsync_options(&args)
     };
+    
+    // Add passthrough args
+    rsync_args.extend(passthrough);
+    
     rsync_args.push(path_win_to_unix(&args.src));
     rsync_args.push(path_win_to_unix(&args.dest));
 
@@ -98,6 +112,69 @@ fn main() {
         .stderr(Stdio::inherit())
         .output()
         .expect("execute rsync failed");
+}
+
+fn parse_with_passthrough(raw_args: &[String]) -> (Args, Vec<String>) {
+    let known_flags = [
+        "-i", "--identity",
+        "-v", "--verbose",
+        "-q", "--quiet",
+        "-c", "--checksum",
+        "-a", "--archive",
+        "-r", "--recursive",
+        "--delete",
+        "--exclude",
+        "--partial",
+        "--progress",
+        "--bwlimit",
+        "-4", "--ipv4",
+        "-6", "--ipv6",
+        "--ssh-port",
+        "--chmod",
+        "--no-perms",
+        "--omit-dir-times",
+        "-z", "--compress",
+        "-s", "--src",
+        "-d", "--dest",
+    ];
+    
+    let mut filtered = vec![raw_args[0].clone()]; // Keep program name
+    let mut passthrough = Vec::new();
+    let mut i = 1;
+    
+    while i < raw_args.len() {
+        let arg = &raw_args[i];
+        
+        // Check if this is a known flag
+        let is_known = known_flags.iter().any(|&flag| {
+            arg == flag || arg.starts_with(&format!("{}=", flag))
+        });
+        
+        if is_known {
+            filtered.push(arg.clone());
+            // If it's a flag that takes a value and not using = syntax
+            if !arg.contains('=') && i + 1 < raw_args.len() {
+                let needs_value = matches!(
+                    arg.as_str(),
+                    "-i" | "--identity" | "--exclude" | "--bwlimit" | 
+                    "--ssh-port" | "--chmod" | "-s" | "--src" | "-d" | "--dest"
+                );
+                if needs_value {
+                    i += 1;
+                    filtered.push(raw_args[i].clone());
+                }
+            }
+        } else {
+            // Unknown arg - pass through
+            passthrough.push(arg.clone());
+        }
+        
+        i += 1;
+    }
+    
+    // Parse the filtered args
+    let args = Args::parse_from(&filtered);
+    (args, passthrough)
 }
 
 fn is_ssh_path(path: &str) -> bool {
